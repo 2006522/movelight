@@ -11,3 +11,5 @@ fapi/
 .gradle/
 run/
 out/
+# Minecraft 日志框架跑自检时会往这里写
+logs/
