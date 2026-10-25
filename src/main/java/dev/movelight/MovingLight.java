@@ -161,8 +161,15 @@ public final class MovingLight {
         }
 
         if (target.equals(placedPos)) {
-            // 同一格只调亮度
-            if (want != placedLevel) {
+            // 同一格：亮度变了要改，方块被别人顶掉了也要补回来。
+            //
+            // 【必须核对真实方块状态，不能只信 placedPos/placedLevel】
+            // 最典型的翻车场景：玩家站在地上挖掉脚下方块 → 光源跟着落进新挖的坑，
+            // 而服务端那份「这里是空气」的 ClientboundBlockUpdatePacket 随后才到，
+            // 走 ClientLevel.setServerVerifiedBlockState 把那一格强改回空气，光源就没了。
+            // 此时位置没变、亮度也没变，只看 want != placedLevel 就会认为无事可做，
+            // 光便永远不亮 —— 只有等玩家跳一下/走一格改变了 target 才会重放。
+            if (want != placedLevel || !hasLightAt(level, target, want)) {
                 setLevel(level, target, want);
             }
             return;
@@ -214,10 +221,20 @@ public final class MovingLight {
         return null;
     }
 
+    /**
+     * 放下（或补回）光源。
+     *
+     * <p>刻意不看 {@code setBlock} 的返回值来记账：那一格如果本来就已经是同样状态的
+     * 光源，{@code Level.setBlock} 会因为「没变化」返回 false（底层
+     * {@code LevelChunk.setBlockState} 直接返回 null），照返回值判断就会漏记，
+     * 于是下一 tick 又以为要重放。这里改用「放完就记」，真正的正确性由每 tick 的
+     * {@link #hasLightAt} 兜底。</p>
+     */
     private static void place(ClientLevel level, BlockPos pos, int light) {
-        if (!level.setBlock(pos, stateOf(light), UPDATE_FLAGS)) {
+        if (!canPlaceAt(level, pos, true)) {
             return;
         }
+        level.setBlock(pos, stateOf(light), UPDATE_FLAGS);
         placedPos = pos.immutable();
         placedLevel = light;
     }
@@ -229,9 +246,15 @@ public final class MovingLight {
             placedLevel = 0;
             return;
         }
-        if (level.setBlock(pos, stateOf(light), UPDATE_FLAGS)) {
-            placedLevel = light;
-        }
+        level.setBlock(pos, stateOf(light), UPDATE_FLAGS);
+        placedLevel = light;
+    }
+
+    /** 这一格现在确实是我们放的光源、而且亮度正好是 {@code light} 吗。 */
+    private static boolean hasLightAt(ClientLevel level, BlockPos pos, int light) {
+        BlockState state = level.getBlockState(pos);
+        return state.getBlock() == Blocks.LIGHT
+                && state.getValue(LightBlock.LEVEL) == light;
     }
 
     private static void remove(ClientLevel level) {

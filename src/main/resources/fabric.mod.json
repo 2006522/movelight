@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "movelight",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "name": "移动光源(MoveLight)",
   "description": "移动光源 (MoveLight)：手上拿着会发光的东西走路时，脚下和身边自动亮起来。纯客户端实现，单人存档和联机都能用。Minecraft 26.4-snapshot-5 / Fabric。",
   "authors": [
