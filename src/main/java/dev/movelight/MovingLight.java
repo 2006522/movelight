@@ -46,6 +46,9 @@ public final class MovingLight {
     /** 物品 → 亮度。手上东西不常变，缓存一下省得每 tick 查注册表。 */
     private static final Map<Item, Integer> LIGHT_CACHE = new HashMap<>();
 
+    /** 方块 → 它的最高亮度。红石灯这类要遍历全部状态才知道，缓存起来。 */
+    private static final Map<Block, Integer> MAX_LIGHT_CACHE = new HashMap<>();
+
     private MovingLight() {
     }
 
@@ -58,15 +61,36 @@ public final class MovingLight {
     }
 
     private static int resolveLight(Item item) {
-        // 手持的方块：跟它放下去之后一样亮（荧石 15、海晶灯 15、火把 14……）
+        // 手持的方块：跟它"亮着的时候"一样亮。
+        // 这里不能只看 defaultBlockState() —— 红石灯默认是灭的、蜡烛默认没点燃，
+        // 取默认状态会把它们算成 0。所以要遍历所有状态取最大值。
         if (item instanceof BlockItem blockItem) {
-            int emission = blockItem.getBlock().defaultBlockState().getLightEmission();
+            int emission = maxLightOf(blockItem.getBlock());
             if (emission > 0) {
                 return emission;
             }
         }
         // 不是方块但也在发光映射表里的（岩浆桶、萤石粉……）
         return Config.lightOfItem(item);
+    }
+
+    /**
+     * 方块所有可能状态里的最高亮度。
+     *
+     * <p>结果按方块缓存 —— 一个方块的状态最多几千个，但同一物品每 tick 都会问到，
+     * 缓存下来避免重复遍历。</p>
+     */
+    private static int maxLightOf(Block block) {
+        return MAX_LIGHT_CACHE.computeIfAbsent(block, b -> {
+            int max = 0;
+            // getPossibleStates() 返回 Guava 的 ImmutableList，直接 for-each 会让 javac
+            // 去加载那个类。这里退成 Iterable 接口，编译期就不需要 Guava 了。
+            Iterable<BlockState> states = b.getStateDefinition().getPossibleStates();
+            for (BlockState state : states) {
+                max = Math.max(max, state.getLightEmission());
+            }
+            return max;
+        });
     }
 
     /** 当前该用的亮度（取主副手较大的那个，再按配置乘倍率）。 */
@@ -274,6 +298,7 @@ public final class MovingLight {
     public static void reset() {
         forget();
         LIGHT_CACHE.clear();
+        MAX_LIGHT_CACHE.clear();
     }
 
     /** 通知：设置改过了（亮度倍率等），下一 tick 重新计算。 */

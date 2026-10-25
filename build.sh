@@ -42,6 +42,10 @@ fi
 if [ -f "$DEPS/fastutil.jar" ]; then
   CP="$CP;$DEPSW/fastutil.jar"
 fi
+# StateDefinition#getPossibleStates 返回 Guava 的 ImmutableList，读签名也要能解析
+if [ -f "$DEPS/guava.jar" ]; then
+  CP="$CP;$DEPSW/guava.jar"
+fi
 for jar in "$DEPS"/fapi/*.jar; do
   CP="$CP;$(tomix "$jar")"
 done
