@@ -1,0 +1,13 @@
+build/
+dist/
+deps/
+mclibs/
+fapi/
+*.jar
+*.log
+.idea/
+.vscode/
+*.iml
+.gradle/
+run/
+out/
