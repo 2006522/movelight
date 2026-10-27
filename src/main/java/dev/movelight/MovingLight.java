@@ -205,21 +205,66 @@ public final class MovingLight {
                 pos.z + config.getOffsetZ());
 
         if (!config.isSnapToGround()) {
-            return canPlaceAt(level, origin, true) ? origin : null;
+            BlockPos picked = canPlaceAt(level, origin, true) ? origin : null;
+            diag(level, origin, picked);
+            return picked;
         }
-        BlockPos[] candidates = {origin, origin.above(), origin.below(), origin.above(2)};
-        for (BlockPos candidate : candidates) {
+        BlockPos[] vertical = {origin, origin.above(), origin.below(), origin.above(2)};
+        // 第一轮只认纯空气，第二轮才动草丛之类的可替换方块
+        for (BlockPos candidate : vertical) {
             if (canPlaceAt(level, candidate, false)) {
                 return candidate;
             }
         }
-        for (BlockPos candidate : candidates) {
+        for (BlockPos candidate : vertical) {
             if (canPlaceAt(level, candidate, true)) {
                 return candidate;
             }
         }
+        // 兜底：垂直方向全被占（贴着栅栏、墙、玻璃板走，或者整个人泡在水里）时，
+        // 退到水平相邻的空格。光离玩家一格总比完全不亮好。
+        for (int dy = 0; dy <= 1; dy++) {
+            for (int[] offset : HORIZONTAL) {
+                BlockPos candidate = origin.offset(offset[0], dy, offset[1]);
+                if (canPlaceAt(level, candidate, false)) {
+                    diag(level, origin, candidate);
+                    return candidate;
+                }
+            }
+        }
+        diag(level, origin, null);
         return null;
     }
+
+    /** 水平方向的 8 个邻居。 */
+    private static final int[][] HORIZONTAL = {
+            {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
+    };
+
+    /**
+     * 放不下时打一条日志（同一个 origin 只打一次，免得每 tick 刷屏）。
+     *
+     * <p>排查"贴着栅栏就不亮"这类问题全靠它 —— 能直接看出是撞上了非空气方块、
+     * 还是流体/边界判定把候选卡掉了。</p>
+     */
+    private static void diag(ClientLevel level, BlockPos origin, BlockPos picked) {
+        if (picked != null) {
+            lastDiagOrigin = null;
+            return;
+        }
+        if (origin.equals(lastDiagOrigin)) {
+            return;
+        }
+        lastDiagOrigin = origin.immutable();
+        BlockState state = level.getBlockState(origin);
+        Log.info("找不到放光源的位置：origin=" + origin.toShortString()
+                + " 方块=" + state.getBlock()
+                + " air=" + state.isAir()
+                + " 可替换=" + state.canBeReplaced()
+                + " 流体=" + !level.getFluidState(origin).isEmpty());
+    }
+
+    private static BlockPos lastDiagOrigin;
 
     /**
      * 放下（或补回）光源。
