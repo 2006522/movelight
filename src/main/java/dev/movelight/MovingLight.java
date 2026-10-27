@@ -3,6 +3,7 @@ package dev.movelight;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
@@ -114,6 +115,9 @@ public final class MovingLight {
     /** 现在还亮着的那一格；null 表示当前没有光。 */
     private static BlockPos placedPos;
     private static int placedLevel;
+
+    /** 放光之前那一格是什么方块 —— 撤走时还原，避免在草丛/雪层的位置留下空气洞。 */
+    private static BlockState placedOriginal;
 
     /** 当前世界；世界换了（换维度/退存档）就得把记录清掉。 */
     private static ClientLevel placedLevelRef;
@@ -279,6 +283,9 @@ public final class MovingLight {
         if (!canPlaceAt(level, pos, true)) {
             return;
         }
+        // 记下这一格原来是什么：撤走时要还原，不然被顶掉的草丛/雪层会留下一个空气洞
+        BlockState before = level.getBlockState(pos);
+        placedOriginal = before.getBlock() == Blocks.LIGHT ? Blocks.AIR.defaultBlockState() : before;
         level.setBlock(pos, stateOf(light), UPDATE_FLAGS);
         placedPos = pos.immutable();
         placedLevel = light;
@@ -289,6 +296,7 @@ public final class MovingLight {
             // 这一格被别人顶掉了，下一 tick 重新找位置
             placedPos = null;
             placedLevel = 0;
+            placedOriginal = null;
             return;
         }
         level.setBlock(pos, stateOf(light), UPDATE_FLAGS);
@@ -307,20 +315,24 @@ public final class MovingLight {
             return;
         }
         BlockPos pos = placedPos;
+        BlockState restore = placedOriginal;
         placedPos = null;
         placedLevel = 0;
+        placedOriginal = null;
         if (level == null) {
             return;
         }
         // 只撤自己放的：万一那一格已经被别的方块顶替了，别把别人的方块删掉
         if (level.getBlockState(pos).getBlock() == Blocks.LIGHT) {
-            level.setBlock(pos, Blocks.AIR.defaultBlockState(), UPDATE_FLAGS);
+            // 还原成放光之前的方块（空气就是空气），不在原地留洞
+            level.setBlock(pos, restore == null ? Blocks.AIR.defaultBlockState() : restore, UPDATE_FLAGS);
         }
     }
 
     private static void forget() {
         placedPos = null;
         placedLevel = 0;
+        placedOriginal = null;
         placedLevelRef = null;
     }
 
@@ -342,6 +354,11 @@ public final class MovingLight {
             return level.getFluidState(pos).isEmpty();
         }
         if (!allowReplace || !state.canBeReplaced()) {
+            return false;
+        }
+        // 藤蔓、梯子、垂泪藤这类「整面/一整条」的东西不替换。
+        // 光方块占上去再撤走，脚边那截藤蔓就没了 —— 看着就是"爬藤蔓把藤蔓挤掉"。
+        if (state.is(BlockTags.CLIMBABLE)) {
             return false;
         }
         return level.getFluidState(pos).isEmpty();
